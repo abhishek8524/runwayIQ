@@ -1,0 +1,64 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Business {
+  id           String            @id @default(uuid())
+  name         String
+  cashOnHand   Int               @default(0)
+  createdAt    DateTime          @default(now())
+  transactions Transaction[]
+  snapshots    MonthlySnapshot[]
+  reports      AIReport[]
+}
+
+model Transaction {
+  id           String   @id @default(uuid())
+  businessId   String
+  date         DateTime
+  amount       Int
+  direction    String
+  category     String
+  description  String?
+  merchantName String?
+  source       String   @default("csv")
+  createdAt    DateTime @default(now())
+  business     Business @relation(fields: [businessId], references: [id])
+}
+
+model MonthlySnapshot {
+  id          String   @id @default(uuid())
+  businessId  String
+  month       DateTime
+  revenue     Int      @default(0)
+  cogs        Int      @default(0)
+  opex        Int      @default(0)
+  grossProfit Int      @default(0)
+  grossMargin Float    @default(0)
+  netBurn     Int      @default(0)
+  burnRate    Float    @default(0)
+  runway      Float    @default(0)
+  revenueVol  Float    @default(0)
+  expenseVol  Float    @default(0)
+  computedAt  DateTime @default(now())
+  business    Business @relation(fields: [businessId], references: [id])
+}
+
+model AIReport {
+  id          String   @id @default(uuid())
+  businessId  String
+  reportText  String
+  riskScore   Int
+  riskLabel   String
+  riskDrivers Json
+  actions     Json
+  problems    Json     @default("[]")
+  solutions   Json     @default("[]")
+  createdAt   DateTime @default(now())
+  business    Business @relation(fields: [businessId], references: [id])
+}

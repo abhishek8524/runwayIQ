@@ -15,7 +15,7 @@ Accepts a CSV of business transactions, computes financial metrics, runs a 3-age
 ```
 backend/
 ├── src/
-│   ├── index.js                     # Express app entry point
+│   ├── index.js                     # Express app entry point (helmet, cors, rate limit)
 │   ├── routes/
 │   │   ├── transactions.js          # CSV upload + transaction list
 │   │   ├── metrics.js               # Monthly snapshot history
@@ -28,9 +28,11 @@ backend/
 │   │   ├── metricsService.js        # Snapshot computation
 │   │   ├── forecastService.js       # Linear regression forecast
 │   │   ├── riskService.js           # Rule-based risk scoring
-│   │   └── csvParser.js             # CSV ingestion
+│   │   └── csvParser.js             # CSV ingestion + validation
 │   └── middleware/
-│       └── errorHandler.js
+│       ├── auth.js                  # Supabase JWT verification + tenant isolation
+│       ├── validate.js              # Zod schemas + validator factory
+│       └── errorHandler.js          # Sanitized error responses
 ├── prisma/
 │   └── schema.prisma                # DB schema
 ├── seed/
@@ -54,9 +56,20 @@ Copy `.env.example` to `.env` and fill in:
 ```env
 DATABASE_URL=postgresql://postgres:[password]@db.[ref].supabase.co:5432/postgres
 ANTHROPIC_API_KEY=sk-ant-...
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your-anon-key
+FRONTEND_ORIGIN=http://localhost:5173
 PORT=3000
+NODE_ENV=development
 BUSINESS_ID=demo-biz-001
+DEMO_USER_ID=00000000-0000-0000-0000-000000000001
 ```
+
+`SUPABASE_URL` and `SUPABASE_ANON_KEY` are found in your Supabase project under **Settings → API**. The anon key is safe to use server-side.
+
+`FRONTEND_ORIGIN` restricts CORS to your frontend URL. Set to your Vercel/Netlify URL in production.
+
+`DEMO_USER_ID` is used by the seed script — replace with a real Supabase user UUID after creating a test account.
 
 ### 3. Push schema to Supabase
 ```bash
@@ -76,18 +89,44 @@ npm start        # production
 
 ---
 
+## Authentication
+
+Every endpoint (except `/health`) requires a valid Supabase JWT in the `Authorization` header:
+
+```
+Authorization: Bearer <supabase-access-token>
+```
+
+The token is verified server-side via `supabase.auth.getUser()`. The `businessId` is then resolved from the token — clients never pass it directly. This enforces strict multi-tenant isolation: users can only access their own business's data.
+
+The frontend should attach the token automatically using an Axios interceptor:
+
+```js
+api.interceptors.request.use(async (config) => {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (session?.access_token) {
+    config.headers.Authorization = `Bearer ${session.access_token}`
+  }
+  return config
+})
+```
+
+---
+
 ## API endpoints
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/transactions/upload` | Upload a CSV file of transactions |
-| `GET` | `/api/transactions` | List recent transactions |
-| `GET` | `/api/metrics` | Monthly snapshot history + latest |
-| `GET` | `/api/forecast` | 3-month revenue forecast |
-| `GET` | `/api/risk` | Risk score + named drivers |
-| `POST` | `/api/report/generate` | Run 3-agent pipeline, save + return report |
-| `GET` | `/api/report/latest` | Retrieve most recent report |
-| `GET` | `/health` | Health check |
+All protected routes return `401` if no token is provided and `403` if the token is valid but no business account exists for that user.
+
+| Method | Path | Auth | Rate limit | Description |
+|--------|------|------|------------|-------------|
+| `POST` | `/api/transactions/upload` | ✓ | 200/15min | Upload a CSV file of transactions |
+| `GET` | `/api/transactions` | ✓ | 200/15min | List recent transactions |
+| `GET` | `/api/metrics` | ✓ | 200/15min | Monthly snapshot history + latest |
+| `GET` | `/api/forecast` | ✓ | 200/15min | 3-month revenue forecast |
+| `GET` | `/api/risk` | ✓ | 200/15min | Risk score + named drivers |
+| `POST` | `/api/report/generate` | ✓ | **5/hr/user** | Run 3-agent pipeline, save + return report |
+| `GET` | `/api/report/latest` | ✓ | 200/15min | Retrieve most recent report |
+| `GET` | `/health` | — | — | Health check |
 
 ### CSV upload format
 
@@ -95,8 +134,7 @@ npm start        # production
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `file` | CSV | Required. Max 10 MB. |
-| `businessId` | string | Optional. Falls back to `BUSINESS_ID` env var. |
+| `file` | CSV | Required. Max 10 MB, max 5,000 rows. |
 
 Expected CSV columns (case-insensitive):
 
@@ -105,8 +143,9 @@ date, amount, direction, category, description, merchant_name
 ```
 
 - `direction`: `inflow` or `outflow`
-- `category`: `revenue`, `cogs`, `payroll`, `marketing`, etc.
-- `amount`: decimal dollars (stored internally as cents)
+- `category`: must be one of `revenue`, `cogs`, `payroll`, `rent`, `utilities`, `marketing`, `software`, `travel`, `tax`, `refund`, `transfer`, `uncategorised`
+- `amount`: decimal dollars between -$10M and $10M (stored internally as cents)
+- Invalid rows return `422` with per-row error details so you can fix and re-upload
 
 ---
 
@@ -182,7 +221,33 @@ Retrieval is tag-intersection scoring — no vector DB needed at this scale.
 
 ---
 
+## Security model
+
+| Layer | Implementation |
+|-------|---------------|
+| Authentication | Supabase JWT verified server-side on every request |
+| Tenant isolation | `businessId` derived from JWT — never from client body/query |
+| Security headers | `helmet()` — sets CSP, X-Frame-Options, X-Content-Type-Options, etc. |
+| CORS | Restricted to `FRONTEND_ORIGIN` env var only |
+| Rate limiting | 200 req/15min global; 5 req/hr per user on report generation |
+| Input validation | Zod schemas on all inputs; `months` param bounded 1–24 |
+| CSV validation | Max 5,000 rows; date, amount bounds, category whitelist per row |
+| File handling | Temp CSV deleted immediately after parsing (success or failure) |
+| Error responses | 5xx returns generic message in production; full detail in dev only |
+| Audit logging | Structured JSON log on every authenticated request (userId, path, IP, ts) |
+
+---
+
 ## Database schema
+
+### `Business` (key columns)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | String | UUID primary key |
+| `userId` | String | Supabase auth user ID — `@unique`, anchor for tenant isolation |
+| `name` | String | Business name |
+| `cashOnHand` | Int | Current cash in cents |
 
 ### `AIReport` (key columns)
 
@@ -196,4 +261,4 @@ Retrieval is tag-intersection scoring — no vector DB needed at this scale.
 | `problems` | Json | Agent 1 output — problem list with severity + tags |
 | `solutions` | Json | Agent 2 output — grounded solutions with impact |
 
-`problems` and `solutions` store the full agent reasoning chain so judges and users can inspect how the final report was produced.
+`problems` and `solutions` store the full agent reasoning chain so the frontend can render it visually and judges can inspect how the final report was produced.

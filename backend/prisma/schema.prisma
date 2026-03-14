@@ -9,6 +9,7 @@ datasource db {
 
 model Business {
   id           String            @id @default(uuid())
+  userId       String            @unique
   name         String
   cashOnHand   Int               @default(0)
   createdAt    DateTime          @default(now())

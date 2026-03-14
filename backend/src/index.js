@@ -10,6 +10,9 @@ const metricsRouter = require('./routes/metrics')
 const forecastRouter = require('./routes/forecast')
 const riskRouter = require('./routes/risk')
 const reportRouter = require('./routes/report')
+const businessesRouter = require('./routes/businesses')
+const simulateRouter = require('./routes/simulate')
+const chatRouter = require('./routes/chat')
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -42,6 +45,9 @@ app.use('/api/metrics', metricsRouter)
 app.use('/api/forecast', forecastRouter)
 app.use('/api/risk', riskRouter)
 app.use('/api/report', reportRouter)
+app.use('/api/businesses', businessesRouter)
+app.use('/api/simulate', simulateRouter)
+app.use('/api/chat', chatRouter)
 
 app.get('/health', (_, res) => res.json({ status: 'ok' }))
 

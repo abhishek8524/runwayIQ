@@ -25,6 +25,11 @@ async function getLinearForecast(businessId, months = 3) {
   const lastRevenue = ys[ys.length - 1]
   const bandWidth = lastRevenue * revenueVol
 
+  const business = await prisma.business.findUnique({
+    where: { id: businessId },
+    select: { cashOnHand: true },
+  })
+
   const forecast = []
   const lastMonth = snapshots[snapshots.length - 1].month
 
@@ -33,11 +38,19 @@ async function getLinearForecast(businessId, months = 3) {
     const month = new Date(lastMonth)
     month.setMonth(month.getMonth() + i)
 
+    // Cash-out risk: does cumulative burn consume all cash in this month?
+    const projectedBurn = snapshots[snapshots.length - 1].netBurn  // use latest netBurn as burn proxy
+    const cumulativeBurn = projectedBurn * i
+    const cashAtMonth = (business?.cashOnHand || 0) - cumulativeBurn
+    const cashOutRisk = cashAtMonth <= 0
+
     forecast.push({
       month: month.toISOString(),
       revenue: Math.max(0, Math.round(projected)),
       low: Math.max(0, Math.round(projected - bandWidth)),
       high: Math.round(projected + bandWidth),
+      cashOutRisk,
+      projectedCash: Math.max(0, cashAtMonth),
     })
   }
 

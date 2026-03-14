@@ -116,4 +116,33 @@ function coefficientOfVariation(values) {
   return Math.sqrt(variance) / Math.abs(mean)
 }
 
-module.exports = { computeAndStoreSnapshots, getSnapshotHistory, getLatestSnapshot }
+/**
+ * Compute MoM percentage deltas for revenue, netBurn, and grossMargin.
+ * Returns the latest snapshot enriched with momDeltas.
+ */
+async function getMomDeltas(businessId) {
+  const snapshots = await prisma.monthlySnapshot.findMany({
+    where: { businessId },
+    orderBy: { month: 'desc' },
+    take: 2,
+  })
+
+  if (snapshots.length < 2) return null
+
+  const [latest, prev] = snapshots
+
+  function pctChange(curr, prior) {
+    if (!prior || prior === 0) return null
+    return parseFloat(((curr - prior) / Math.abs(prior) * 100).toFixed(1))
+  }
+
+  return {
+    revenue: pctChange(latest.revenue, prev.revenue),
+    netBurn: pctChange(latest.netBurn, prev.netBurn),
+    grossMargin: pctChange(latest.grossMargin, prev.grossMargin),
+    opex: pctChange(latest.opex, prev.opex),
+    runway: pctChange(latest.runway, prev.runway),
+  }
+}
+
+module.exports = { computeAndStoreSnapshots, getSnapshotHistory, getLatestSnapshot, getMomDeltas }

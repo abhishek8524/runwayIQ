@@ -9,13 +9,25 @@ datasource db {
 
 model Business {
   id           String            @id @default(uuid())
-  userId       String            @unique
+  userId       String
   name         String
   cashOnHand   Int               @default(0)
   createdAt    DateTime          @default(now())
   transactions Transaction[]
   snapshots    MonthlySnapshot[]
   reports      AIReport[]
+  messages     ChatMessage[]
+
+  @@index([userId])
+}
+
+model ChatMessage {
+  id         String   @id @default(uuid())
+  businessId String
+  role       String   // "user" | "assistant"
+  content    String
+  createdAt  DateTime @default(now())
+  business   Business @relation(fields: [businessId], references: [id])
 }
 
 model Transaction {

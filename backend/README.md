@@ -47,6 +47,13 @@ backend/
 ## Setup
 
 ### 1. Install dependencies
+
+Single copy-paste command:
+```bash
+npm install express prisma @prisma/client @anthropic-ai/sdk @supabase/supabase-js multer csv-parse cors dotenv helmet express-rate-limit zod && npm install --save-dev nodemon
+```
+
+Or just:
 ```bash
 npm install
 ```
@@ -65,11 +72,9 @@ BUSINESS_ID=demo-biz-001
 DEMO_USER_ID=00000000-0000-0000-0000-000000000001
 ```
 
-`SUPABASE_URL` and `SUPABASE_ANON_KEY` are found in your Supabase project under **Settings → API**. The anon key is safe to use server-side.
-
-`FRONTEND_ORIGIN` restricts CORS to your frontend URL. Set to your Vercel/Netlify URL in production.
-
-`DEMO_USER_ID` is used by the seed script — replace with a real Supabase user UUID after creating a test account.
+- `SUPABASE_URL` and `SUPABASE_ANON_KEY` — found in your Supabase project under **Settings → API**. The anon key is safe to use server-side.
+- `FRONTEND_ORIGIN` — restricts CORS to your frontend URL. Set to your Vercel/Netlify URL in production.
+- `DEMO_USER_ID` — used by the seed script. Replace with a real Supabase user UUID after creating a test account.
 
 ### 3. Push schema to Supabase
 ```bash
@@ -120,13 +125,29 @@ All protected routes return `401` if no token is provided and `403` if the token
 | Method | Path | Auth | Rate limit | Description |
 |--------|------|------|------------|-------------|
 | `POST` | `/api/transactions/upload` | ✓ | 200/15min | Upload a CSV file of transactions |
-| `GET` | `/api/transactions` | ✓ | 200/15min | List recent transactions |
+| `GET` | `/api/transactions` | ✓ | 200/15min | List recent transactions (last 200) |
 | `GET` | `/api/metrics` | ✓ | 200/15min | Monthly snapshot history + latest |
-| `GET` | `/api/forecast` | ✓ | 200/15min | 3-month revenue forecast |
+| `GET` | `/api/forecast` | ✓ | 200/15min | Revenue forecast |
 | `GET` | `/api/risk` | ✓ | 200/15min | Risk score + named drivers |
 | `POST` | `/api/report/generate` | ✓ | **5/hr/user** | Run 3-agent pipeline, save + return report |
 | `GET` | `/api/report/latest` | ✓ | 200/15min | Retrieve most recent report |
 | `GET` | `/health` | — | — | Health check |
+
+> **Out of scope for v1:** `/api/chat` (conversational follow-up) and `/api/whatif` (scenario modelling) are planned features not yet implemented.
+
+### `GET /api/forecast` — query params
+
+| Param | Type | Required | Default | Notes |
+|-------|------|----------|---------|-------|
+| `months` | integer | No | `3` | Number of months to forecast. Min 1, max 24. |
+
+### `GET /api/metrics` — no query params
+
+Returns `{ history: MonthlySnapshot[], latest: MonthlySnapshot }`. No params needed — business is resolved from JWT.
+
+### `GET /api/risk` — no query params
+
+Returns `{ score: number, label: string, drivers: { name, points }[] }`. No params needed.
 
 ### CSV upload format
 
@@ -154,13 +175,58 @@ date, amount, direction, category, description, merchant_name
 `POST /api/report/generate` triggers three sequential Claude calls using `claude-sonnet-4-20250514`.
 
 ### Agent 1 — Problem Identifier
-Reads the full financial context (metrics, risk score, forecast) and outputs a structured list of up to 4 problems with severity (`critical` / `high` / `medium`) and retrieval tags.
+
+**What it does:** Reads the full financial context (metrics, risk score, forecast) and outputs a structured list of up to 4 problems with severity and retrieval tags.
+
+**System prompt (abridged):**
+```
+You are a financial analyst. Identify the top financial problems for this business.
+Output ONLY valid JSON.
+
+Schema: { "problems": [{ "title", "severity": "critical"|"high"|"medium", "detail", "tags": [] }] }
+
+Rules:
+- Maximum 4 problems
+- Severity "critical" only if runway < 3 months OR risk score >= 70
+- tags must come from: burn, burn_rate, runway, cash, gross_margin, cogs, revenue,
+  churn, decline, growth, volatility, predictability, efficiency, working_capital,
+  fundraising, survival
+- Use exact dollar amounts and percentages from the data
+```
 
 ### Agent 2 — Solution Generator (RAG-grounded)
-Uses Agent 1's tags to retrieve relevant chunks from the knowledge base, then generates one grounded solution per problem with a quantified estimated impact and timeframe.
+
+**What it does:** Uses Agent 1's tags to retrieve the top 3 matching KB chunks, then generates one grounded solution per problem with a quantified estimated impact and timeframe.
+
+**System prompt (abridged):**
+```
+You are a CFO advisor. Given financial problems and best-practice knowledge, generate grounded solutions.
+Output ONLY valid JSON.
+
+Schema: { "solutions": [{ "problem", "action", "estimatedImpact", "timeframe": "immediate"|"30 days"|"90 days", "kbSource" }], "kbChunksUsed": [] }
+
+Rules:
+- One solution per problem
+- estimatedImpact MUST include a number derived from the financial data
+- kbSource must be a chunk ID from the knowledge base, or null
+```
 
 ### Agent 3 — CFO Report Writer
-Synthesises the problems and solutions into a 2–3 sentence executive summary and 3 prioritised action items written as direct commands.
+
+**What it does:** Synthesises the problems and solutions into a 2–3 sentence executive summary and 3 prioritised action items written as direct commands.
+
+**System prompt (abridged):**
+```
+You are a CFO writing a concise report for a small business owner.
+You have pre-analysed problems and solutions. Synthesise them into a final report.
+Output ONLY valid JSON.
+
+Schema: { "reportText": "2-3 sentence executive summary", "actions": ["action 1", "action 2", "action 3"] }
+
+Rules:
+- reportText must reference the risk score, runway, and at least one dollar amount
+- actions start with a verb and include a metric
+```
 
 ### Response shape
 
@@ -172,19 +238,19 @@ Synthesises the problems and solutions into a 2–3 sentence executive summary a
   "riskScore": 55,
   "riskLabel": "high",
   "riskDrivers": [{ "name": "Low runway (<6 months)", "points": 25 }],
-  "actions": ["Freeze non-essential hires...", "..."],
+  "actions": ["Freeze non-essential hires immediately...", "..."],
   "problems": [
     {
       "title": "Declining Revenue",
       "severity": "high",
-      "detail": "Revenue fell 17% over 2 months...",
+      "detail": "Revenue fell 17% over 2 months from $120k to $89k.",
       "tags": ["revenue", "decline"]
     }
   ],
   "solutions": [
     {
       "problem": "Declining Revenue",
-      "action": "Launch annual prepay offer...",
+      "action": "Launch annual prepay offer at 10% discount to existing customers",
       "estimatedImpact": "+2.3 months runway",
       "timeframe": "30 days",
       "kbSource": "kb-revenue-decline"
@@ -204,7 +270,7 @@ Synthesises the problems and solutions into a 2–3 sentence executive summary a
 
 ## RAG knowledge base
 
-`knowledgeBase.js` contains 8 static financial best-practice chunks covering:
+`knowledgeBase.js` contains 8 static financial best-practice chunks. Agent 2 retrieves the top 3 by tag-intersection scoring — no vector DB needed at this scale.
 
 | Chunk ID | Topic |
 |----------|-------|
@@ -217,7 +283,14 @@ Synthesises the problems and solutions into a 2–3 sentence executive summary a
 | `kb-cash-optimization` | Working capital — DSO/DPO improvement, invoice factoring |
 | `kb-fundraising-signals` | Fundraising timing — when to raise, bridge strategy |
 
-Retrieval is tag-intersection scoring — no vector DB needed at this scale.
+**Sample chunk content (`kb-runway-critical`):**
+> Critical runway (<3 months): Immediate actions — (1) send a bridge funding ask to existing investors within 48 hours, (2) identify your top 3 customers and propose annual prepay in exchange for a 10-15% discount, (3) cut all discretionary spend immediately (travel, events, software trials). Historical data: 78% of startups that hit <3 months runway without taking action fold within 6 months.
+
+**Sample chunk content (`kb-burn-rate-high`):**
+> High burn rate management: Industry benchmark for early-stage SaaS is 15-20% of ARR per month in net burn. If burn exceeds this, the primary lever is payroll (typically 60-70% of opex). Freeze non-essential hires, renegotiate SaaS subscriptions, and push AP terms to Net-60. Target: reduce burn by 20-30% within 90 days without touching R&D headcount.
+
+**Sample chunk content (`kb-revenue-decline`):**
+> Revenue decline response: A 2+ month decline signals either churn acceleration or acquisition slowdown. Calculate net revenue retention (NRR) — healthy SaaS is >100%. Immediate actions: (1) churn analysis — which customer segments are leaving and why, (2) upsell motion — existing customers are 5x cheaper to expand than new acquisition, (3) pricing audit — if you haven't raised prices in 12+ months, you likely can by 10-15% with minimal churn impact.
 
 ---
 
@@ -240,7 +313,7 @@ Retrieval is tag-intersection scoring — no vector DB needed at this scale.
 
 ## Database schema
 
-### `Business` (key columns)
+### `Business`
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -249,10 +322,46 @@ Retrieval is tag-intersection scoring — no vector DB needed at this scale.
 | `name` | String | Business name |
 | `cashOnHand` | Int | Current cash in cents |
 
-### `AIReport` (key columns)
+### `Transaction`
 
 | Column | Type | Description |
 |--------|------|-------------|
+| `id` | String | UUID primary key |
+| `businessId` | String | FK → Business |
+| `date` | DateTime | Transaction date |
+| `amount` | Int | Amount in cents |
+| `direction` | String | `inflow` or `outflow` |
+| `category` | String | e.g. `revenue`, `cogs`, `payroll` |
+| `description` | String? | Optional free text |
+| `merchantName` | String? | Optional merchant |
+| `source` | String | `csv` or `seed` |
+
+### `MonthlySnapshot`
+
+Computed monthly from transactions by `metricsService.js`. Written once per month per business, recomputed on every CSV upload.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | String | UUID primary key |
+| `businessId` | String | FK → Business |
+| `month` | DateTime | First day of the month |
+| `revenue` | Int | Total inflow (non-COGS) in cents |
+| `cogs` | Int | Cost of goods sold in cents |
+| `opex` | Int | Total outflow (non-COGS) in cents |
+| `grossProfit` | Int | `revenue - cogs` in cents |
+| `grossMargin` | Float | `grossProfit / revenue * 100` |
+| `netBurn` | Int | `opex + cogs - revenue` in cents |
+| `burnRate` | Float | 3-month rolling average burn in cents/mo |
+| `runway` | Float | `cashOnHand / burnRate` in months |
+| `revenueVol` | Float | Revenue coefficient of variation (trailing 3mo) |
+| `expenseVol` | Float | Expense coefficient of variation (trailing 3mo) |
+
+### `AIReport`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | String | UUID primary key |
+| `businessId` | String | FK → Business |
 | `reportText` | String | Agent 3 executive summary |
 | `riskScore` | Int | 0–100 |
 | `riskLabel` | String | `low` / `medium` / `high` / `critical` |

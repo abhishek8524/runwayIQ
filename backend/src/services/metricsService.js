@@ -40,10 +40,10 @@ async function computeAndStoreSnapshots(businessId) {
     return { key, revenue, cogs, opex, grossProfit, grossMargin, netBurn }
   })
 
-  // 3-month rolling burn rate
+  // 3-month rolling burn rate (total spend = opex + cogs, always positive)
   const withBurnRate = snapshots.map((s, i) => {
     const window = snapshots.slice(Math.max(0, i - 2), i + 1)
-    const burnRate = window.reduce((sum, w) => sum + w.netBurn, 0) / window.length
+    const burnRate = window.reduce((sum, w) => sum + w.opex + w.cogs, 0) / window.length
     return { ...s, burnRate }
   })
 
@@ -59,12 +59,19 @@ async function computeAndStoreSnapshots(businessId) {
     }
   })
 
+  // Compute trailing burn rate from last 6 months that have expenses
+  const monthsWithBurn = withVol.filter(s => (s.opex + s.cogs) > 0)
+  const trailingBurn = monthsWithBurn.length > 0
+    ? monthsWithBurn.slice(-6).reduce((sum, s) => sum + s.opex + s.cogs, 0) / Math.min(6, monthsWithBurn.length)
+    : 0
+
   // Upsert snapshots
   const business = await prisma.business.findUnique({ where: { id: businessId } })
   for (const s of withVol) {
-    const runway = s.burnRate > 0
-      ? (business.cashOnHand / s.burnRate)
-      : 999
+    const effectiveBurn = s.burnRate > 0 ? s.burnRate : trailingBurn
+    const runway = effectiveBurn > 0
+      ? (business.cashOnHand / effectiveBurn)
+      : 0
 
     await prisma.monthlySnapshot.upsert({
       where: {
@@ -77,7 +84,7 @@ async function computeAndStoreSnapshots(businessId) {
       update: {
         revenue: s.revenue, cogs: s.cogs, opex: s.opex,
         grossProfit: s.grossProfit, grossMargin: s.grossMargin,
-        netBurn: s.netBurn, burnRate: s.burnRate, runway,
+        netBurn: s.netBurn, burnRate: effectiveBurn, runway,
         revenueVol: s.revenueVol, expenseVol: s.expenseVol,
         computedAt: new Date(),
       },
@@ -86,7 +93,7 @@ async function computeAndStoreSnapshots(businessId) {
         month: new Date(`${s.key}-01`),
         revenue: s.revenue, cogs: s.cogs, opex: s.opex,
         grossProfit: s.grossProfit, grossMargin: s.grossMargin,
-        netBurn: s.netBurn, burnRate: s.burnRate, runway,
+        netBurn: s.netBurn, burnRate: effectiveBurn, runway,
         revenueVol: s.revenueVol, expenseVol: s.expenseVol,
       },
     })

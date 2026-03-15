@@ -106,6 +106,7 @@ export function Dashboard() {
   // Cash balance prompt
   const [cashInput, setCashInput] = useState('');
   const [cashSaving, setCashSaving] = useState(false);
+  const [cashDismissed, setCashDismissed] = useState(false);
 
   // What-if sliders
   const [opexCut, setOpexCut] = useState(20);
@@ -185,6 +186,7 @@ export function Dashboard() {
       await api.businesses.update({ cashOnHand: dollars });
       await loadData();
       setCashInput('');
+      setCashDismissed(true);
     } catch { /* ignore */ } finally {
       setCashSaving(false);
     }
@@ -328,7 +330,7 @@ export function Dashboard() {
       </div>
 
       {/* ── Cash Balance Prompt ───────────────────────────────────────────── */}
-      {!loading && business && business.cashOnHand === 0 && (
+      {!loading && business && !cashDismissed && (
         <div className="flex items-center gap-3 px-4 py-3 rounded-[10px] border"
           style={{ backgroundColor: '#FFFBEB', borderColor: '#FCD34D' }}>
           <span className="text-[13px]">💰</span>
@@ -346,7 +348,7 @@ export function Dashboard() {
               value={cashInput}
               onChange={e => setCashInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleSaveCash()}
-              placeholder="e.g. 500000"
+              placeholder={business.cashOnHand ? `Current: ${(business.cashOnHand / 100).toLocaleString()}` : 'e.g. 500000'}
               className="w-32 px-3 py-1.5 border border-[#FCD34D] rounded-md text-[11px] focus:outline-none focus:ring-1 focus:ring-[#F59E0B]"
               style={{ backgroundColor: '#FFFDF0', color: '#374151' }}
             />
@@ -358,6 +360,12 @@ export function Dashboard() {
             >
               {cashSaving ? 'Saving…' : 'Set Balance'}
             </button>
+            <button
+              onClick={() => setCashDismissed(true)}
+              className="ml-1 text-[14px] leading-none opacity-50 hover:opacity-100 transition-opacity"
+              style={{ color: '#92400E' }}
+              title="Dismiss"
+            >×</button>
           </div>
         </div>
       )}

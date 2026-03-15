@@ -12,6 +12,7 @@ export function fmtMoney(cents: number): string {
 
 /** Format a runway value, e.g. 2.6 → "2.6 mo" */
 export function fmtRunway(months: number): string {
+  if (!months || months <= 0) return '0.0 mo'
   if (months >= 999) return '∞'
   return `${months.toFixed(1)} mo`
 }

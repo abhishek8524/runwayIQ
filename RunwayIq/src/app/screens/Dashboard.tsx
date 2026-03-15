@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowRight, Upload, Send, RefreshCw, Loader2 } from 'lucide-react';
+import { ArrowRight, Upload, Send, RefreshCw, Loader2, Download } from 'lucide-react';
+import { generateCFOReport } from '../../lib/generatePDF';
 import {
   api, MetricsResponse, RiskResponse, Report,
   ForecastMonth, SimulateResponse, Business, ChatMessage,
@@ -201,6 +202,12 @@ export function Dashboard() {
     } finally {
       setGenerating(false);
     }
+  }
+
+  // Download PDF report
+  function handleDownloadPDF() {
+    if (!report) return;
+    generateCFOReport({ business, metrics, risk, report, forecast, chartData });
   }
 
   // Chat
@@ -598,6 +605,17 @@ export function Dashboard() {
             RAG-grounded
           </span>
           <div className="ml-auto flex items-center gap-2">
+            {report && (
+              <button
+                onClick={handleDownloadPDF}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-[10px] transition-colors hover:bg-[#F0FDF4]"
+                style={{ borderColor: '#059669', color: '#059669' }}
+                title="Download PDF report"
+              >
+                <Download size={11} />
+                Download PDF
+              </button>
+            )}
             <button
               onClick={handleGenerateReport}
               disabled={generating}

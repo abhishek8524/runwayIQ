@@ -1,0 +1,29 @@
+# Environment files — never commit these
+.env
+.env.local
+.env.*.local
+backend/.env
+
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build output
+dist/
+build/
+.vite/
+**/.vite/
+
+# OS files
+.DS_Store
+**/.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor
+.idea/
+.vscode/
+*.swp

@@ -30,20 +30,35 @@ const forecastSchema = z.object({
 // --- CSV row schema (used inside csvParser, not as route middleware) ---
 
 const ALLOWED_CATEGORIES = [
-  'revenue', 'cogs', 'payroll', 'rent', 'utilities', 'marketing',
+  'revenue', 'cogs', 'opex', 'payroll', 'rent', 'utilities', 'marketing',
   'software', 'travel', 'tax', 'refund', 'transfer', 'uncategorised',
 ]
+
+// Normalise direction aliases → 'inflow' | 'outflow'
+function normaliseDirection(raw) {
+  const v = (raw || '').toLowerCase().trim()
+  if (['inflow', 'in', 'credit', 'income', 'revenue', 'positive'].includes(v)) return 'inflow'
+  if (['outflow', 'out', 'debit', 'expense', 'payment', 'negative'].includes(v)) return 'outflow'
+  return v // let zod reject it with a clear message
+}
+
+// Normalise category: keep allowed ones, map unknowns to 'uncategorised'
+function normaliseCategory(raw) {
+  const v = (raw || 'uncategorised').toLowerCase().trim()
+  return ALLOWED_CATEGORIES.includes(v) ? v : 'uncategorised'
+}
 
 const csvRowSchema = z.object({
   date: z.string().refine(s => !isNaN(Date.parse(s)), { message: 'Invalid date format' }),
   amount: z.number()
-    .min(-10_000_000, 'Amount below -$10M limit')
-    .max(10_000_000, 'Amount above $10M limit')
-    .refine(n => isFinite(n), { message: 'Amount must be a finite number' }),
-  direction: z.enum(['inflow', 'outflow']),
-  category: z.enum(ALLOWED_CATEGORIES),
+    .refine(n => isFinite(n), { message: 'Amount must be a finite number' })
+    .transform(n => Math.abs(n)), // always store as positive; direction col determines sign
+  direction: z.enum(['inflow', 'outflow'], {
+    errorMap: () => ({ message: "Direction must be 'inflow' or 'outflow' (or: in/out/credit/debit)" }),
+  }),
+  category: z.string(),
   description: z.string().max(500).nullable().optional(),
   merchantName: z.string().max(200).nullable().optional(),
 })
 
-module.exports = { validate, forecastSchema, csvRowSchema }
+module.exports = { validate, forecastSchema, csvRowSchema, normaliseDirection, normaliseCategory }

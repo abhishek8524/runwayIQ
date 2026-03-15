@@ -43,8 +43,24 @@ async function requireAuth(req, res, next) {
         orderBy: { createdAt: 'asc' },
         select: { id: true },
       })
+      // Auto-create a business on first login — no seed required
       if (!business) {
-        return res.status(403).json({ error: 'No business account found for this user' })
+        const emailName = (user.email || '').split('@')[0] || 'My Business'
+        const displayName = emailName.charAt(0).toUpperCase() + emailName.slice(1)
+        business = await prisma.business.create({
+          data: {
+            userId: user.id,
+            name: displayName,
+            cashOnHand: 0,
+          },
+          select: { id: true },
+        })
+        console.log(JSON.stringify({
+          event: 'business_auto_created',
+          userId: user.id,
+          businessId: business.id,
+          ts: new Date().toISOString(),
+        }))
       }
     }
 

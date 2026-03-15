@@ -1,10 +1,12 @@
-/** Convert a cent value (integer) to a display dollar string, e.g. 6_800_000 → "$68K" */
+/** Convert a cent value (integer) to a display dollar string.
+ *  Under $1M: exact with commas e.g. $42,800
+ *  $1M+: abbreviated e.g. $1.2M
+ */
 export function fmtMoney(cents: number): string {
   const dollars = cents / 100
   const abs = Math.abs(dollars)
   const sign = dollars < 0 ? '-' : ''
   if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`
-  if (abs >= 1_000) return `${sign}$${Math.round(abs / 1_000)}K`
   return `${sign}$${Math.round(abs).toLocaleString()}`
 }
 

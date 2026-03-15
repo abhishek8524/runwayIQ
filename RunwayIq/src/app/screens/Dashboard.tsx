@@ -15,7 +15,7 @@ import { SeverityBadge } from '../components/SeverityBadge';
 // ─── tiny helpers ─────────────────────────────────────────────────────────────
 function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`bg-white border-[0.5px] border-[#E5E7EB] rounded-[10px] p-4 ${className}`}>
+    <div className={`bg-white border-[0.5px] border-[#E5E7EB] rounded-[10px] p-5 ${className}`}>
       {children}
     </div>
   );
@@ -41,35 +41,41 @@ function SectionLabel({ children, badge }: { children: React.ReactNode; badge?: 
 interface KPIProps {
   label: string; value: string; sub: string;
   subColor?: string; danger?: boolean; sparkline?: number[];
+  sparkColor?: string;
 }
 
-function KPI({ label, value, sub, subColor = '#9CA3AF', danger, sparkline }: KPIProps) {
+function KPI({ label, value, sub, subColor = '#9CA3AF', danger, sparkline, sparkColor }: KPIProps) {
+  const minSpark = Math.min(0, ...(sparkline ?? [0]));
   const maxSpark = Math.max(1, ...(sparkline ?? [1]));
+  const range = maxSpark - minSpark || 1;
+  const barColor = danger ? '#E24B4A' : (sparkColor ?? '#1A56DB');
   return (
     <Card className={danger ? 'bg-[#FFF5F5] border-[#FCA5A5]' : ''}>
-      <div className="text-[9px] uppercase tracking-wider mb-2" style={{ color: '#9CA3AF', fontWeight: 600 }}>
+      <div className="text-[10px] uppercase tracking-wider mb-2" style={{ color: '#9CA3AF', fontWeight: 600 }}>
         {label}
       </div>
-      <div className="text-[22px] mb-1" style={{ color: danger ? '#E24B4A' : '#111827', fontWeight: 600 }}>
+      <div className="text-[24px] mb-1" style={{ color: danger ? '#E24B4A' : '#111827', fontWeight: 600 }}>
         {value}
       </div>
-      <div className="text-[10px] mb-3" style={{ color: subColor, fontWeight: 500 }}>{sub}</div>
+      <div className="text-[12px] mb-3" style={{ color: subColor, fontWeight: 500 }}>{sub}</div>
       {sparkline && (
-        <div className="flex items-end gap-[2px] h-[18px]">
+        <div className="flex items-end gap-[2px] h-[22px]" style={{ maxWidth: '120px' }}>
           {sparkline.map((v, i) => (
             <div key={i}
-              className="flex-1 rounded-sm transition-all"
+              className="rounded-[2px] transition-all"
               style={{
-                height: `${Math.max(10, (v / maxSpark) * 100)}%`,
-                backgroundColor: danger ? '#E24B4A' : '#1A56DB',
-                opacity: i === sparkline.length - 1 ? 1 : 0.35 + i * 0.1,
+                width: '10px',
+                flexShrink: 0,
+                height: `${Math.max(15, ((v - minSpark) / range) * 100)}%`,
+                backgroundColor: barColor,
+                opacity: i === sparkline.length - 1 ? 1 : 0.25 + (i / sparkline.length) * 0.6,
               }}
             />
           ))}
         </div>
       )}
       {danger && (
-        <div className="mt-2 h-[3px] rounded-full bg-[#FEE2E2] overflow-hidden">
+        <div className="mt-2 h-[2px] rounded-full bg-[#FEE2E2] overflow-hidden">
           <div className="h-full bg-[#E24B4A] rounded-full" style={{ width: '22%' }} />
         </div>
       )}
@@ -95,6 +101,10 @@ export function Dashboard() {
   // Generating report state
   const [generating, setGenerating] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
+
+  // Cash balance prompt
+  const [cashInput, setCashInput] = useState('');
+  const [cashSaving, setCashSaving] = useState(false);
 
   // What-if sliders
   const [opexCut, setOpexCut] = useState(20);
@@ -165,6 +175,20 @@ export function Dashboard() {
     }
   }
 
+  // Save cash on hand and recompute runway
+  async function handleSaveCash() {
+    const dollars = parseFloat(cashInput.replace(/[^0-9.]/g, ''));
+    if (isNaN(dollars) || dollars < 0) return;
+    setCashSaving(true);
+    try {
+      await api.businesses.update({ cashOnHand: dollars });
+      await loadData();
+      setCashInput('');
+    } catch { /* ignore */ } finally {
+      setCashSaving(false);
+    }
+  }
+
   // Generate AI report
   async function handleGenerateReport() {
     setGenerating(true);
@@ -223,9 +247,9 @@ export function Dashboard() {
         <div className="flex items-center gap-2 text-[11px]" style={{ color: '#9CA3AF' }}>
           <span className="text-[#1A56DB]" style={{ fontWeight: 600 }}>RunwayIQ</span>
           <span>/</span>
-          <span style={{ color: '#374151' }}>{business?.name ?? 'My Business'}</span>
+          <span>Businesses</span>
           <span>/</span>
-          <span style={{ color: '#374151' }}>Dashboard</span>
+          <span style={{ color: '#374151', fontWeight: 500 }}>{business?.name ?? '…'}</span>
         </div>
         <div className="flex items-center gap-3">
           {uploadMsg && (
@@ -267,6 +291,7 @@ export function Dashboard() {
           sub={deltas?.revenue != null ? fmtDelta(deltas.revenue) + ' vs last month' : '—'}
           subColor={deltas?.revenue != null && deltas.revenue >= 0 ? '#059669' : '#E24B4A'}
           sparkline={history.slice(-6).map(s => s.revenue)}
+          sparkColor="#1A56DB"
         />
         <KPI
           label="Burn Rate"
@@ -274,13 +299,16 @@ export function Dashboard() {
           sub={deltas?.netBurn != null ? fmtDelta(deltas.netBurn, true) + ' vs last month' : '—'}
           subColor={deltas?.netBurn != null && deltas.netBurn <= 0 ? '#059669' : '#E24B4A'}
           sparkline={history.slice(-6).map(s => s.burnRate)}
+          sparkColor="#E24B4A"
         />
         <KPI
           label="Runway"
           value={loading ? '…' : fmtRunway(latest?.runway ?? 0)}
-          sub={(latest?.runway ?? 99) < 3 ? 'CRITICAL — below 3 mo' : (latest?.runway ?? 99) < 6 ? 'LOW — act soon' : 'Healthy'}
+          sub={(latest?.runway ?? 99) < 3 ? 'Critical — below 3 months' : (latest?.runway ?? 99) < 6 ? 'Low — act soon' : 'Healthy'}
           subColor={(latest?.runway ?? 99) < 3 ? '#E24B4A' : (latest?.runway ?? 99) < 6 ? '#D97706' : '#059669'}
           danger={(latest?.runway ?? 99) < 3}
+          sparkline={history.slice(-6).map(s => s.runway).filter(r => r < 999)}
+          sparkColor="#1A56DB"
         />
         <KPI
           label="Gross Margin"
@@ -288,8 +316,44 @@ export function Dashboard() {
           sub={(latest?.grossMargin ?? 100) < 40 ? 'below 40% benchmark' : 'above benchmark'}
           subColor={(latest?.grossMargin ?? 100) < 40 ? '#D97706' : '#059669'}
           sparkline={history.slice(-6).map(s => s.grossMargin)}
+          sparkColor="#059669"
         />
       </div>
+
+      {/* ── Cash Balance Prompt ───────────────────────────────────────────── */}
+      {!loading && business && business.cashOnHand === 0 && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-[10px] border"
+          style={{ backgroundColor: '#FFFBEB', borderColor: '#FCD34D' }}>
+          <span className="text-[13px]">💰</span>
+          <div className="flex-1">
+            <span className="text-[11px]" style={{ color: '#92400E', fontWeight: 600 }}>
+              Set your current cash balance to calculate runway
+            </span>
+            <span className="text-[10px] ml-2" style={{ color: '#B45309' }}>
+              Runway = Cash on hand ÷ monthly burn rate
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={cashInput}
+              onChange={e => setCashInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSaveCash()}
+              placeholder="e.g. 500000"
+              className="w-32 px-3 py-1.5 border border-[#FCD34D] rounded-md text-[11px] focus:outline-none focus:ring-1 focus:ring-[#F59E0B]"
+              style={{ backgroundColor: '#FFFDF0', color: '#374151' }}
+            />
+            <button
+              onClick={handleSaveCash}
+              disabled={cashSaving || !cashInput}
+              className="px-3 py-1.5 rounded-md text-[11px] text-white disabled:opacity-50 transition-opacity"
+              style={{ backgroundColor: '#D97706', fontWeight: 600 }}
+            >
+              {cashSaving ? 'Saving…' : 'Set Balance'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Revenue vs Burn + Risk ─────────────────────────────────────────── */}
       <div className="grid grid-cols-[2fr_1fr] gap-3">
@@ -353,9 +417,9 @@ export function Dashboard() {
           </div>
           <div className="space-y-2 mt-2">
             {(risk?.drivers ?? []).map((d, i) => (
-              <div key={i} className="flex justify-between items-center py-1.5 border-b border-[#F3F4F6] last:border-0">
-                <span className="text-[10px] truncate pr-2" style={{ color: '#374151' }}>{d.name}</span>
-                <span className="text-[10px] shrink-0" style={{ color: '#E24B4A', fontWeight: 600 }}>+{d.points}</span>
+              <div key={i} className="flex justify-between items-center py-2 border-b border-[#F3F4F6] last:border-0">
+                <span className="text-[12px] truncate pr-2" style={{ color: '#374151' }}>{d.name}</span>
+                <span className="text-[12px] shrink-0" style={{ color: '#E24B4A', fontWeight: 600 }}>+{d.points}</span>
               </div>
             ))}
             {!risk && !loading && (
@@ -368,8 +432,9 @@ export function Dashboard() {
       {/* ── What-If Simulator ─────────────────────────────────────────────── */}
       <Card>
         <SectionLabel badge="NEW">What-If Simulator</SectionLabel>
-        <div className="grid grid-cols-[1fr_auto] gap-8 items-start">
-          <div className="space-y-4">
+        <div className="flex items-center gap-8">
+          {/* Sliders */}
+          <div className="flex-1 space-y-4">
             <SliderRow
               label="Cut OPEX by"
               value={opexCut}
@@ -385,19 +450,20 @@ export function Dashboard() {
               formatter={(v) => `$${v}k`}
             />
           </div>
-          <div className="grid grid-cols-3 gap-4 shrink-0">
+          {/* Results */}
+          <div className="flex items-center gap-6 shrink-0 pl-6 border-l border-[#F3F4F6]">
             {[
-              { label: 'New runway', value: simulate?.simulated.runway != null ? fmtRunway(simulate.simulated.runway) : '—', color: '#059669' },
-              { label: 'Risk score', value: simulate?.simulated.riskScore != null ? String(simulate.simulated.riskScore) : '—', color: '#D97706' },
+              { label: 'New runway',  value: simulate?.simulated.runway != null ? fmtRunway(simulate.simulated.runway) : '—', color: '#059669' },
+              { label: 'Risk score',  value: simulate?.simulated.riskScore != null ? String(simulate.simulated.riskScore) : '—', color: '#D97706' },
               {
-                label: (simulate?.delta.cashSavedPerMonth ?? 0) >= 0 ? 'Cash saved/mo' : 'Extra burn/mo',
+                label: (simulate?.delta.cashSavedPerMonth ?? 0) >= 0 ? 'Cash saved' : 'Extra burn',
                 value: simulate?.delta.cashSavedPerMonth != null ? fmtMoney(Math.abs(simulate.delta.cashSavedPerMonth)) : '—',
                 color: (simulate?.delta.cashSavedPerMonth ?? 0) >= 0 ? '#059669' : '#E24B4A',
               },
             ].map(item => (
-              <div key={item.label} className="text-center min-w-[80px]">
-                <div className="text-[9px] uppercase mb-1" style={{ color: '#9CA3AF', fontWeight: 600 }}>{item.label}</div>
-                <div className="text-[20px]" style={{ color: item.color, fontWeight: 600 }}>{item.value}</div>
+              <div key={item.label} className="text-center min-w-[72px]">
+                <div className="text-[9px] uppercase tracking-wider mb-1" style={{ color: '#9CA3AF', fontWeight: 600 }}>{item.label}</div>
+                <div className="text-[22px] leading-tight" style={{ color: item.color, fontWeight: 700 }}>{item.value}</div>
               </div>
             ))}
           </div>
@@ -433,69 +499,84 @@ export function Dashboard() {
       </Card>
 
       {/* ── Agent Detail Cards ────────────────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-[1fr_2fr_1fr] gap-3">
+
         {/* Agent 1 — Analyst */}
-        <Card className="border-l-2 border-l-[#1A56DB] rounded-l-none">
-          <div className="text-[9px] uppercase mb-1" style={{ color: '#9CA3AF', fontWeight: 600 }}>Agent 1 — Analyst</div>
-          <div className="space-y-2 mt-2">
+        <Card className="border-l-[3px] border-l-[#1A56DB]">
+          <div className="text-[10px] uppercase tracking-widest mb-4" style={{ color: '#9CA3AF', fontWeight: 700 }}>Agent 1 — Analyst</div>
+          <div className="space-y-3">
             {report?.problems?.length ? (
-              report.problems.slice(0, 3).map((p, i) => (
-                <div key={i} className="flex items-start gap-2">
+              report.problems.slice(0, 4).map((p, i) => (
+                <div key={i} className="flex items-start gap-2 py-1">
                   <SeverityBadge severity={p.severity} />
-                  <span className="text-[10px]" style={{ color: '#374151' }}>{p.title}</span>
+                  <span className="text-[12px] leading-snug" style={{ color: '#374151' }}>{p.title}</span>
                 </div>
               ))
             ) : (
-              <p className="text-[10px]" style={{ color: '#9CA3AF' }}>
-                {loading ? 'Loading…' : 'Generate a report to see analysis'}
+              <p className="text-[12px] py-2" style={{ color: '#9CA3AF' }}>
+                Generate a report to see analysis
               </p>
             )}
           </div>
         </Card>
 
         {/* Agent 2 — Strategist */}
-        <Card className="border-l-2 border-l-[#7F77DD] rounded-l-none">
-          <div className="text-[9px] uppercase mb-1" style={{ color: '#9CA3AF', fontWeight: 600 }}>Agent 2 — Strategist</div>
+        <Card className="border-l-[3px] border-l-[#7F77DD]">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="text-[10px] uppercase tracking-widest" style={{ color: '#9CA3AF', fontWeight: 700 }}>Agent 2 — Strategist</span>
+            {report?.problems?.slice(0, 3).flatMap(p => p.tags?.slice(0, 1) ?? []).map(tag => (
+              <span key={tag} className="text-[10px] px-2 py-0.5 rounded-full"
+                style={{ backgroundColor: '#EBF0FF', color: '#1A56DB', fontWeight: 600 }}>
+                {tag.replace(/_/g, ' ')}
+              </span>
+            ))}
+          </div>
           {report?.solutions?.length ? (
-            <div className="mt-2 space-y-2">
-              <div className="flex flex-wrap gap-1 mb-2">
-                {report.problems?.slice(0, 2).map(p => (
-                  p.tags?.slice(0, 1).map(tag => (
-                    <span key={tag} className="text-[8px] px-1.5 py-0.5 rounded"
-                      style={{ backgroundColor: '#EBF0FF', color: '#1A56DB' }}>
-                      {tag.replace(/_/g, ' ')}
-                    </span>
-                  ))
-                ))}
-              </div>
+            <div className="space-y-4">
               {report.solutions.slice(0, 3).map((s, i) => (
-                <div key={i}>
-                  <div className="text-[10px]" style={{ color: '#374151', fontWeight: 500 }}>{s.action}</div>
-                  <div className="text-[9px]" style={{ color: '#059669' }}>{s.estimatedImpact}</div>
+                <div key={i} className="pb-4 border-b border-[#F3F4F6] last:border-0 last:pb-0">
+                  <div className="text-[12px] leading-relaxed mb-1.5" style={{ color: '#374151', fontWeight: 500 }}>
+                    {s.action.split(/[.!]/)[0].trim()}
+                  </div>
+                  <div className="text-[11px]" style={{ color: '#059669', fontWeight: 500 }}>
+                    {s.estimatedImpact}
+                  </div>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-[10px] mt-2" style={{ color: '#9CA3AF' }}>
-              {loading ? 'Loading…' : 'Generate a report to see recommendations'}
+            <p className="text-[12px] py-2" style={{ color: '#9CA3AF' }}>
+              Generate a report to see recommendations
             </p>
           )}
         </Card>
 
         {/* Knowledge Used */}
-        <Card className="border-l-2 border-l-[#059669] rounded-l-none">
-          <div className="text-[9px] uppercase mb-1" style={{ color: '#9CA3AF', fontWeight: 600 }}>Knowledge Used</div>
-          <div className="mt-2 space-y-2">
+        <Card className="border-l-[3px] border-l-[#059669]">
+          <div className="text-[10px] uppercase tracking-widest mb-4" style={{ color: '#9CA3AF', fontWeight: 700 }}>Knowledge Used</div>
+          <div className="space-y-3">
             {(report?.kbChunksRetrieved?.length ? report.kbChunksRetrieved : [
-              'Low runway playbook', 'Burn benchmarks', 'SME turnaround tactics', 'Revenue recovery',
-            ]).slice(0, 4).map((src, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <div className="w-1 h-1 rounded-full bg-[#059669] shrink-0" />
-                <span className="text-[10px]" style={{ color: '#374151' }}>
-                  {src.replace(/_/g, ' ')}
-                </span>
-              </div>
-            ))}
+              'kb-runway-critical', 'kb-burn-rate-high', 'kb-burn-growth', 'kb-revenue-decline',
+            ]).slice(0, 5).map((src, i) => {
+              const KB_LABELS: Record<string, string> = {
+                'kb-burn-rate-high':     'Burn rate benchmarks',
+                'kb-runway-critical':    'Low runway playbook',
+                'kb-gross-margin-low':   'Gross margin benchmarks',
+                'kb-revenue-decline':    'Revenue recovery guide',
+                'kb-revenue-volatility': 'Revenue predictability guide',
+                'kb-burn-growth':        'Burn efficiency playbook',
+                'kb-cash-optimization':  'Cash flow optimization',
+                'kb-fundraising-signals':'Fundraising timing guide',
+              }
+              return (
+                <div key={i} className="flex items-start gap-2 py-0.5">
+                  <div className="w-1.5 h-1.5 rounded-full bg-[#059669] shrink-0 mt-1" />
+                  <span className="text-[12px] leading-snug" style={{ color: '#374151' }}>
+                    {KB_LABELS[src] ?? src}
+                  </span>
+                </div>
+              )
+            })}
           </div>
         </Card>
       </div>
@@ -538,20 +619,21 @@ export function Dashboard() {
 
         {report ? (
           <>
-            <div className="pl-3 mb-4 text-[11px] leading-relaxed"
-              style={{ borderLeft: '2px solid #1A56DB', color: '#374151' }}>
+            <div className="pl-4 mb-5 text-[13px] leading-[1.75]"
+              style={{ borderLeft: '3px solid #1A56DB', color: '#374151' }}>
               {report.reportText}
             </div>
-            <div className="text-[10px] mb-3 uppercase tracking-wide" style={{ color: '#9CA3AF', fontWeight: 600 }}>
+            <div className="text-[10px] mb-4 uppercase tracking-widest" style={{ color: '#9CA3AF', fontWeight: 700 }}>
               Recommended actions
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-3 gap-4">
               {report.actions.slice(0, 3).map((action, i) => (
-                <div key={i} className="p-3 border-[0.5px] border-[#E5E7EB] rounded-lg">
-                  <div className="text-[11px] mb-1" style={{ color: '#1A56DB', fontWeight: 700 }}>
+                <div key={i} className="p-4 rounded-lg border-[0.5px]"
+                  style={{ borderColor: '#E5E7EB', backgroundColor: '#FAFAFA' }}>
+                  <div className="text-[14px] mb-2" style={{ color: '#1A56DB', fontWeight: 800 }}>
                     0{i + 1}
                   </div>
-                  <div className="text-[10px]" style={{ color: '#374151', lineHeight: 1.5 }}>{action}</div>
+                  <div className="text-[12px] leading-relaxed" style={{ color: '#374151' }}>{action}</div>
                 </div>
               ))}
             </div>

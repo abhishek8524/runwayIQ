@@ -201,6 +201,12 @@ export const api = {
   },
   businesses: {
     get: () => get<Business[]>('/businesses'),
+    update: (data: { name?: string; cashOnHand?: number }) =>
+      request<Business>('/businesses/current', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
   },
   simulate: {
     run: (params: SimulateParams) => post<SimulateResponse>('/simulate', params),

@@ -122,8 +122,8 @@ Schema:
   "solutions": [
     {
       "problem": "problem title this addresses",
-      "action": "specific actionable step",
-      "estimatedImpact": "quantified impact e.g. '$8k/mo savings' or '+2.1 months runway'",
+      "action": "SHORT verb-first title, max 6 words, e.g. 'Cut OPEX 20-30% now'",
+      "estimatedImpact": "quantified impact under 8 words, e.g. '+1.8 months runway' or '+$40k cash buffer'",
       "timeframe": "immediate" | "30 days" | "90 days",
       "kbSource": "kb chunk id used, or null"
     }
@@ -133,7 +133,8 @@ Schema:
 
 Rules:
 - One solution per problem
-- estimatedImpact MUST include a number derived from the financial data
+- action MUST be a short punchy title — max 6 words, verb first, no full sentences, no periods
+- estimatedImpact MUST include a number derived from the financial data, keep it under 8 words
 - kbSource must be a chunk ID from the knowledge base, or null`,
     messages: [{
       role: 'user',

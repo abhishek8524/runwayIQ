@@ -23,7 +23,7 @@ app.use(helmet())
 // 2. CORS — whitelist only the frontend origin
 app.use(cors({
   origin: process.env.FRONTEND_ORIGIN || 'http://localhost:5173',
-  methods: ['GET', 'POST'],
+  methods: ['GET', 'POST', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }))
 

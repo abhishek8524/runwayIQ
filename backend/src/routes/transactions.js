@@ -24,12 +24,26 @@ router.post('/upload', requireAuth, upload.single('file'), async (req, res, next
   try {
     if (!req.file) return res.status(400).json({ error: 'CSV file is required' })
 
-    const businessId = req.businessId // from JWT via requireAuth
+    const businessId = req.businessId
     const rows = await parseCsvFile(req.file.path)
 
     await prisma.transaction.createMany({
       data: rows.map(r => ({ ...r, businessId, source: 'csv' })),
       skipDuplicates: true,
+    })
+
+    // Infer cash on hand from the net of ALL transactions for this business.
+    // This gives a data-driven starting balance rather than relying on a manual entry.
+    const allTxns = await prisma.transaction.findMany({
+      where: { businessId },
+      select: { amount: true, direction: true },
+    })
+    const computedCash = allTxns.reduce((sum, t) =>
+      t.direction === 'inflow' ? sum + t.amount : sum - t.amount, 0
+    )
+    await prisma.business.update({
+      where: { id: businessId },
+      data: { cashOnHand: Math.max(0, computedCash) },
     })
 
     const snapshots = await computeAndStoreSnapshots(businessId)

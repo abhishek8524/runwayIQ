@@ -20,9 +20,21 @@ const PORT = process.env.PORT || 3000
 // 1. Security headers
 app.use(helmet())
 
-// 2. CORS — whitelist only the frontend origin
+// 2. CORS — whitelist frontend origins (comma-separated env var, always includes localhost)
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  ...(process.env.FRONTEND_ORIGIN
+    ? process.env.FRONTEND_ORIGIN.split(',').map(o => o.trim().replace(/\/$/, ''))
+    : []),
+]
 app.use(cors({
-  origin: process.env.FRONTEND_ORIGIN || 'http://localhost:5173',
+  origin: (origin, callback) => {
+    // Allow requests with no origin (curl, mobile apps, Render health checks)
+    if (!origin) return callback(null, true)
+    if (allowedOrigins.includes(origin)) return callback(null, true)
+    callback(new Error(`CORS: origin ${origin} not allowed`))
+  },
   methods: ['GET', 'POST', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }))

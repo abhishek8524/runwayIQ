@@ -1,13 +1,14 @@
+const prisma = require('../lib/prisma')
 const express = require('express')
 const Anthropic = require('@anthropic-ai/sdk')
-const { PrismaClient } = require('@prisma/client')
+
 const { requireAuth } = require('../middleware/auth')
 const metricsService = require('../services/metricsService')
 const forecastService = require('../services/forecastService')
 const riskService = require('../services/riskService')
 
 const router = express.Router()
-const prisma = new PrismaClient()
+
 const client = new Anthropic()
 const MODEL = 'claude-sonnet-4-20250514'
 

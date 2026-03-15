@@ -1,11 +1,12 @@
+const prisma = require('../lib/prisma')
 const { createClient } = require('@supabase/supabase-js')
-const { PrismaClient } = require('@prisma/client')
+
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_ANON_KEY
 )
-const prisma = new PrismaClient()
+
 
 async function requireAuth(req, res, next) {
   try {

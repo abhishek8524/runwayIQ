@@ -1,5 +1,6 @@
-const { PrismaClient } = require('@prisma/client')
-const prisma = new PrismaClient()
+const prisma = require('../lib/prisma')
+
+
 
 /**
  * Rule-based risk scoring (0–100).

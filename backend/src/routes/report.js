@@ -1,11 +1,12 @@
+const prisma = require('../lib/prisma')
 const express = require('express')
 const rateLimit = require('express-rate-limit')
-const { PrismaClient } = require('@prisma/client')
+
 const { generateReport } = require('../services/aiService')
 const { requireAuth } = require('../middleware/auth')
 
 const router = express.Router()
-const prisma = new PrismaClient()
+
 
 // Tight rate limit on Claude API calls — 5 per hour per user
 const reportLimiter = rateLimit({

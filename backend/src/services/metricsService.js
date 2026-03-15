@@ -1,5 +1,6 @@
-const { PrismaClient } = require('@prisma/client')
-const prisma = new PrismaClient()
+const prisma = require('../lib/prisma')
+
+
 
 /**
  * Compute monthly snapshots from raw transactions and upsert into MonthlySnapshot.

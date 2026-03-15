@@ -1,13 +1,23 @@
+const prisma = require('../lib/prisma')
 const Anthropic = require('@anthropic-ai/sdk')
-const { PrismaClient } = require('@prisma/client')
+
 const { retrieveChunks } = require('./knowledgeBase')
 const metricsService = require('./metricsService')
 const forecastService = require('./forecastService')
 const riskService = require('./riskService')
 
-const prisma = new PrismaClient()
+
 const client = new Anthropic()
-const MODEL = 'claude-sonnet-4-20250514'
+const MODEL = 'claude-opus-4-5'
+
+// Strip markdown code fences that Claude sometimes adds despite instructions
+function parseClaudeJSON(text) {
+  const clean = text.trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim()
+  return JSON.parse(clean)
+}
 
 // ---------------------------------------------------------------------------
 // Shared financial context builder
@@ -81,7 +91,7 @@ Rules:
     messages: [{ role: 'user', content: financialContext }],
   })
 
-  return JSON.parse(response.content[0].text.trim())
+  return parseClaudeJSON(response.content[0].text)
 }
 
 // ---------------------------------------------------------------------------
@@ -131,7 +141,7 @@ Rules:
     }],
   })
 
-  const result = JSON.parse(response.content[0].text.trim())
+  const result = parseClaudeJSON(response.content[0].text)
   result.kbChunksRetrieved = kbChunks.map(c => c.id)
   return result
 }
@@ -172,7 +182,7 @@ Rules:
     }],
   })
 
-  return JSON.parse(response.content[0].text.trim())
+  return parseClaudeJSON(response.content[0].text)
 }
 
 // ---------------------------------------------------------------------------

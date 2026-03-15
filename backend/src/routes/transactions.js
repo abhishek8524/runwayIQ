@@ -1,13 +1,14 @@
+const prisma = require('../lib/prisma')
 const express = require('express')
 const multer = require('multer')
 const path = require('path')
-const { PrismaClient } = require('@prisma/client')
+
 const { parseCsvFile } = require('../services/csvParser')
 const { computeAndStoreSnapshots } = require('../services/metricsService')
 const { requireAuth } = require('../middleware/auth')
 
 const router = express.Router()
-const prisma = new PrismaClient()
+
 
 const upload = multer({
   dest: path.join(__dirname, '../../uploads/'),

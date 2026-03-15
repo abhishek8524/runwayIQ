@@ -44,7 +44,7 @@ async function main() {
   // Upsert business
   await prisma.business.upsert({
     where: { id: BUSINESS_ID },
-    update: { cashOnHand: 28000000 }, // $280k in cents
+    update: { cashOnHand: 28000000, userId: DEMO_USER_ID },
     create: {
       id: BUSINESS_ID,
       userId: DEMO_USER_ID,

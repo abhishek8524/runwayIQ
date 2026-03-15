@@ -1,9 +1,10 @@
+const prisma = require('../lib/prisma')
 const express = require('express')
-const { PrismaClient } = require('@prisma/client')
+
 const { requireAuth } = require('../middleware/auth')
 
 const router = express.Router()
-const prisma = new PrismaClient()
+
 
 // GET /api/businesses — list all businesses for the authenticated user
 router.get('/', requireAuth, async (req, res, next) => {

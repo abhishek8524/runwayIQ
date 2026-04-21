@@ -12,9 +12,9 @@ import { useAuth } from '../contexts/AuthContext'
 import { ReactNode } from 'react'
 
 function RequireAuth({ children }: { children: ReactNode }) {
-  const { session, loading } = useAuth()
+  const { session, loading, isGuest } = useAuth()
   if (loading) return null
-  if (!session) return <Navigate to="/landing" replace />
+  if (!session && !isGuest) return <Navigate to="/landing" replace />
   return <>{children}</>
 }
 

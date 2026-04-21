@@ -1,12 +1,15 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
 import { Session, User } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
+import { guestMode } from '../lib/guestData'
 
 interface AuthContextValue {
   session: Session | null
   user: User | null
   loading: boolean
+  isGuest: boolean
   signOut: () => Promise<void>
+  signInAsGuest: () => void
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -14,6 +17,7 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
+  const [isGuest, setIsGuest] = useState(false)
 
   useEffect(() => {
     // Hydrate from existing session
@@ -33,10 +37,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function signOut() {
     await supabase.auth.signOut()
     setSession(null)
+    setIsGuest(false)
+    guestMode.disable()
+  }
+
+  function signInAsGuest() {
+    guestMode.enable()
+    setIsGuest(true)
+    setLoading(false)
   }
 
   return (
-    <AuthContext.Provider value={{ session, user: session?.user ?? null, loading, signOut }}>
+    <AuthContext.Provider value={{ session, user: session?.user ?? null, loading, isGuest, signOut, signInAsGuest }}>
       {children}
     </AuthContext.Provider>
   )

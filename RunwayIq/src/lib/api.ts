@@ -1,4 +1,14 @@
 import { supabase } from './supabase'
+import {
+  guestMode,
+  guestBusiness,
+  guestTransactions,
+  guestMetrics,
+  guestRisk,
+  guestReport,
+  guestForecast,
+  guestSimulate,
+} from './guestData'
 
 // In dev the Vite proxy rewrites /api → http://localhost:3000/api.
 // In production set VITE_API_BASE_URL to the deployed backend origin.
@@ -172,17 +182,32 @@ export interface Business {
 
 export const api = {
   metrics: {
-    get: () => get<MetricsResponse>('/metrics'),
+    get: (): Promise<MetricsResponse> => {
+      if (guestMode.isActive()) return Promise.resolve(guestMetrics)
+      return get<MetricsResponse>('/metrics')
+    },
   },
   risk: {
-    get: () => get<RiskResponse>('/risk'),
+    get: (): Promise<RiskResponse> => {
+      if (guestMode.isActive()) return Promise.resolve(guestRisk)
+      return get<RiskResponse>('/risk')
+    },
   },
   forecast: {
-    get: (months = 3) => get<ForecastMonth[]>(`/forecast?months=${months}`),
+    get: (months = 3): Promise<ForecastMonth[]> => {
+      if (guestMode.isActive()) return Promise.resolve(guestForecast.slice(0, months))
+      return get<ForecastMonth[]>(`/forecast?months=${months}`)
+    },
   },
   transactions: {
-    getAll: () => get<Transaction[]>('/transactions'),
+    getAll: (): Promise<Transaction[]> => {
+      if (guestMode.isActive()) return Promise.resolve(guestTransactions)
+      return get<Transaction[]>('/transactions')
+    },
     upload: async (file: File): Promise<{ imported: number; snapshots: number }> => {
+      if (guestMode.isActive()) {
+        throw new Error('Guest mode — sign up for a free account to upload your own data.')
+      }
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.access_token) throw new Error('Not authenticated')
       const form = new FormData()
@@ -200,24 +225,64 @@ export const api = {
     },
   },
   businesses: {
-    get: () => get<Business[]>('/businesses'),
-    update: (data: { name?: string; cashOnHand?: number }) =>
-      request<Business>('/businesses/current', {
+    get: (): Promise<Business[]> => {
+      if (guestMode.isActive()) return Promise.resolve([guestBusiness])
+      return get<Business[]>('/businesses')
+    },
+    update: (data: { name?: string; cashOnHand?: number }): Promise<Business> => {
+      if (guestMode.isActive()) return Promise.resolve({ ...guestBusiness, ...data })
+      return request<Business>('/businesses/current', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
-      }),
+      })
+    },
   },
   simulate: {
-    run: (params: SimulateParams) => post<SimulateResponse>('/simulate', params),
+    run: (params: SimulateParams): Promise<SimulateResponse> => {
+      if (guestMode.isActive()) {
+        // Scale the static result based on the requested opex cut vs the demo 15%
+        const factor = params.opexCutPercent / 15
+        return Promise.resolve({
+          ...guestSimulate,
+          delta: {
+            runwayMonths:      Math.round(guestSimulate.delta.runwayMonths * factor),
+            burnReduction:     Math.round(guestSimulate.delta.burnReduction * factor),
+            cashSavedPerMonth: Math.round(guestSimulate.delta.cashSavedPerMonth * factor),
+            riskScoreChange:   Math.round(guestSimulate.delta.riskScoreChange * factor),
+          },
+        })
+      }
+      return post<SimulateResponse>('/simulate', params)
+    },
   },
   chat: {
-    send: (message: string, history: ChatMessage[]) =>
-      post<ChatResponse>('/chat', { message, conversationHistory: history }),
-    history: () => get<ChatMessage[]>('/chat/history'),
+    send: (message: string, history: ChatMessage[]): Promise<ChatResponse> => {
+      if (guestMode.isActive()) {
+        return Promise.resolve({
+          reply: 'CFO Chat is available to registered users. Sign up for free to ask unlimited questions about your finances.',
+          conversationHistory: [
+            ...history,
+            { role: 'user' as const, content: message },
+            { role: 'assistant' as const, content: 'CFO Chat is available to registered users. Sign up for free to ask unlimited questions about your finances.' },
+          ],
+        })
+      }
+      return post<ChatResponse>('/chat', { message, conversationHistory: history })
+    },
+    history: (): Promise<ChatMessage[]> => {
+      if (guestMode.isActive()) return Promise.resolve([])
+      return get<ChatMessage[]>('/chat/history')
+    },
   },
   report: {
-    latest: () => get<Report>('/report/latest'),
-    generate: () => post<Report>('/report/generate', {}),
+    latest: (): Promise<Report> => {
+      if (guestMode.isActive()) return Promise.resolve(guestReport)
+      return get<Report>('/report/latest')
+    },
+    generate: (): Promise<Report> => {
+      if (guestMode.isActive()) return Promise.resolve(guestReport)
+      return post<Report>('/report/generate', {})
+    },
   },
 }

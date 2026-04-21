@@ -1,14 +1,21 @@
 import { useState, FormEvent } from 'react'
 import { useNavigate } from 'react-router'
 import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../contexts/AuthContext'
 
 export function Login() {
   const navigate = useNavigate()
+  const { signInAsGuest } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [mode, setMode] = useState<'signin' | 'signup'>('signin')
+
+  function handleGuest() {
+    signInAsGuest()
+    navigate('/')
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -131,6 +138,30 @@ export function Login() {
               </>
             )}
           </div>
+        </div>
+
+        {/* Guest access */}
+        <div className="mt-3 text-center">
+          <button
+            onClick={handleGuest}
+            className="w-full py-2 rounded-[10px] text-[12px] border transition-colors"
+            style={{
+              backgroundColor: 'transparent',
+              borderColor: '#E5E7EB',
+              color: '#6B7280',
+            }}
+            onMouseEnter={e => {
+              (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#F9FAFB'
+            }}
+            onMouseLeave={e => {
+              (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent'
+            }}
+          >
+            Continue as Guest — explore with demo data
+          </button>
+          <p className="mt-2 text-[10px]" style={{ color: '#D1D5DB' }}>
+            No account needed · read-only demo · works offline
+          </p>
         </div>
       </div>
     </div>
